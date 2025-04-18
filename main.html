@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+/
+<script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
+
+
+    in vec4 vPosition;
+    in vec3 vNormal;
+    in vec2 vTexCoord;
+    
+    // Outputs to the fragment shader
+    out vec3 fPos;         // Eye-space position
+    out vec3 fNormal;      // Eye-space normal
+    out vec2 fTexCoordOut; // Pass-through texture coords
+    
+    // Uniform matrices
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+    uniform mat4 normalMatrix;
+    
+    void main()
+    {
+        // Convert vertex position to eye space
+        vec4 posEye = modelViewMatrix * vPosition;
+        fPos = posEye.xyz;
+    
+        // Convert normal to eye space
+        fNormal = (normalMatrix * vec4(vNormal, 0.0)).xyz;
+    
+        // Pass texture coordinates
+        fTexCoordOut = vTexCoord;
+    
+        // Final clip-space position
+        gl_Position = projectionMatrix * posEye;
+    }
+    
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
+
+    precision mediump float;
+    
+    // Receive from the vertex shader
+    in vec3 fPos;
+    in vec3 fNormal;
+    in vec2 fTexCoordOut;
+    
+    // Lighting uniforms
+    uniform vec4 ambientProduct;
+    uniform vec4 diffuseProduct;
+    uniform vec4 specularProduct;
+    uniform vec4 lightPosition;  // In eye space, or ensure consistent space
+    uniform float shininess;
+    
+    // Texture uniforms
+    uniform sampler2D texture1;
+    uniform sampler2D texture2;
+    uniform int useTextures;
+    
+    // Final output color
+    out vec4 fragColor;
+    
+    void main()
+    {
+        // Normalize the eye-space normal
+        vec3 N = normalize(fNormal);
+    
+        // Compute the vector from fragment to light
+        // If lightPosition is in eye space, do (lightPosition.xyz - fPos)
+        vec3 L = normalize(lightPosition.xyz - fPos);
+    
+        // Vector from fragment to eye is just -fPos (eye is at 0,0,0 in eye space)
+        vec3 V = normalize(-fPos);
+    
+
+    
+        // ============ ADS Lighting ============
+    
+        // 1 Ambient
+        vec4 ambient = ambientProduct;
+    
+        // 2 Diffuse
+        float diff = max(dot(L, N), 0.0);
+        vec4 diffuse = diffuseProduct * diff;
+        
+        // === CEL-SHADING MODIFICATION START ===
+        // Quantize the diffuse lighting into distinct bands (like cartoon shading)
+        float levels = 4.0;        // Number of brightness levels - controls how "cartoonish" it looks
+        float quant = floor(diff * levels) / (levels - 1.0);
+        // Replace smooth diffuse with quantized version for cel-shading effect
+        vec4 toonDiffuse = diffuseProduct * quant;
+        // === CEL-SHADING MODIFICATION END ===
+    
+        // 3 Specular (Blinn-Phong)
+        // Compute halfway vector H = normalize(L + V)
+        vec3 H = normalize(L + V);
+    
+        // dot(N, H) instead of dot(R, V)
+        float spec = 0.0;
+        if(diff > 0.0) {
+            spec = pow(max(dot(N, H), 0.0), shininess);
+        }
+        vec4 specular = specularProduct * spec;
+    
+        // Combine ADS - use toonDiffuse instead of diffuse for cel-shading
+        vec4 adsColor = ambient + toonDiffuse + specular;
+    
+        // ============ Texture Lookup ============
+        vec4 texColor;
+        if (useTextures == 1) {
+            // Use the first texture
+            texColor = texture(texture1, fTexCoordOut);
+        } else if (useTextures == 0) {
+            // For non-textured objects like particles, use the material color directly
+            // This will preserve the flame color set with setColor()
+            texColor = vec4(1.0, 1.0, 1.0, 1.0); 
+            
+            // Add glow effect for flame particles
+            // Add a special case for flame particles by checking the color
+            if (diffuseProduct.r > 0.9 && diffuseProduct.g < 0.6 && diffuseProduct.b < 0.1) {
+                // For flame particles (orange-reddish color)
+                // Add bloom/glow effect by increasing the emission
+                adsColor += vec4(diffuseProduct.rgb * 0.5, 0.0);
+            }
+        } else {
+            // Use the second texture
+            texColor = texture(texture2, fTexCoordOut);
+        }
+    
+        // ============ Final Fragment Color ============
+        // Multiply ADS lighting by texture color
+        fragColor = adsColor * texColor;
+    
+        // Set alpha to 1.0
+        fragColor.a = 1.0;
+    }
+    
+</script>
+
+
+    
+
+<script type="text/javascript" src="Common/webgl-utils.js"></script>
+<script type="text/javascript" src="Common/initShaders.js"></script>
+
+<script type="text/javascript" src="Common/MV.js"></script>
+<script type="text/javascript" src="objects.js"></script>
+<script type="text/javascript" src="main.js"></script>
+<script type="text/javascript" src="planets.js"></script>
+<script type="text/javascript" src="spaceship.js"></script>
+<script type="text/javascript" src="textures.js"></script>
+<script type="text/javascript" src="moon.js"></script>
+
+
+
+
+<body>
+<canvas id="gl-canvas" width="1920" height="1080">
+Oops ... your browser doesn't support the HTML5 canvas element
+</canvas>
+
+<br/>
+<br/>
+
+<div id="textureToggleButton">
+</div>
+</body>
+</html>
